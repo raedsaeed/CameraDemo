@@ -18,11 +18,14 @@ package com.raed.camerademo.view;
 
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.SurfaceTexture;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.SurfaceHolder;
-import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.ViewGroup;
+
+import androidx.annotation.NonNull;
 
 import com.google.android.gms.common.images.Size;
 
@@ -35,11 +38,10 @@ public class CameraSourcePreview extends ViewGroup {
     private static final String TAG = "MIDemoApp:Preview";
 
     private final Context context;
-    private final SurfaceView surfaceView;
+    private final AutoFitTextureView textureView;
     private boolean startRequested;
     private boolean surfaceAvailable;
     private CameraSource cameraSource;
-
     private GraphicOverlay overlay;
 
     public CameraSourcePreview(Context context, AttributeSet attrs) {
@@ -48,23 +50,22 @@ public class CameraSourcePreview extends ViewGroup {
         startRequested = false;
         surfaceAvailable = false;
 
-        surfaceView = new SurfaceView(context);
-        surfaceView.getHolder().addCallback(new SurfaceCallback());
-        addView(surfaceView);
-    }
-
-    private void start(CameraSource cameraSource) throws IOException {
-        this.cameraSource = cameraSource;
-
-        if (this.cameraSource != null) {
-            startRequested = true;
-            startIfReady();
-        }
+        textureView = new AutoFitTextureView(context);
+        textureView.setSurfaceTextureListener(new SurfaceTextureCallback());
+        addView(textureView);
     }
 
     public void start(CameraSource cameraSource, GraphicOverlay overlay) throws IOException {
         this.overlay = overlay;
-        start(cameraSource);
+        this.cameraSource = cameraSource;
+        start();
+    }
+
+    private void start() throws IOException {
+        if (this.cameraSource != null) {
+            startRequested = true;
+            startIfReady();
+        }
     }
 
     public void stop() {
@@ -78,7 +79,7 @@ public class CameraSourcePreview extends ViewGroup {
             cameraSource.release();
             cameraSource = null;
         }
-        surfaceView.getHolder().getSurface().release();
+        textureView.getSurfaceTexture().release();
     }
 
     private void startIfReady() throws IOException, SecurityException {
@@ -131,12 +132,12 @@ public class CameraSourcePreview extends ViewGroup {
             // The preview input is wider than the layout area. Fit the layout height and crop
             // the preview input horizontally while keep the center.
             int horizontalOffset = (int) (previewAspectRatio * layoutHeight - layoutWidth) / 2;
-            surfaceView.layout(-horizontalOffset, 0, layoutWidth + horizontalOffset, layoutHeight);
+            textureView.layout(-horizontalOffset, 0, layoutWidth + horizontalOffset, layoutHeight);
         } else {
             // The preview input is taller than the layout area. Fit the layout width and crop the preview
             // input vertically while keep the center.
             int verticalOffset = (int) (layoutWidth / previewAspectRatio - layoutHeight) / 2;
-            surfaceView.layout(0, -verticalOffset, layoutWidth, layoutHeight + verticalOffset);
+            textureView.layout(0, -verticalOffset, layoutWidth, layoutHeight + verticalOffset);
         }
     }
 
@@ -151,6 +152,34 @@ public class CameraSourcePreview extends ViewGroup {
 
         Log.d(TAG, "isPortraitMode returning false by default");
         return false;
+    }
+
+    private class SurfaceTextureCallback implements TextureView.SurfaceTextureListener {
+        @Override
+        public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+            surfaceAvailable = true;
+            try {
+                startIfReady();
+            } catch (IOException e) {
+                Log.e(TAG, "onSurfaceTextureAvailable: ", e);
+            }
+        }
+
+        @Override
+        public void onSurfaceTextureSizeChanged(@NonNull SurfaceTexture surface, int width, int height) {
+
+        }
+
+        @Override
+        public boolean onSurfaceTextureDestroyed(@NonNull SurfaceTexture surface) {
+            surfaceAvailable = false;
+            return false;
+        }
+
+        @Override
+        public void onSurfaceTextureUpdated(@NonNull SurfaceTexture surface) {
+
+        }
     }
 
     private class SurfaceCallback implements SurfaceHolder.Callback {
