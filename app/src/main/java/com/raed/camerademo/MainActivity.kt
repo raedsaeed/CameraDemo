@@ -2,34 +2,29 @@ package com.raed.camerademo
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.graphics.SurfaceTexture
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
-import android.util.Size
-import android.view.Surface
-import android.view.TextureView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.core.CameraSelector
-import androidx.camera.core.Preview
-import androidx.camera.core.SurfaceRequest
-import androidx.camera.lifecycle.ProcessCameraProvider
-import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.databinding.DataBindingUtil
+import com.raed.camerademo.barcodescanner.BarcodeScannerProcessor
 import com.raed.camerademo.databinding.ActivityMainBinding
-import java.util.*
+import com.raed.camerademo.view.CameraSource
+import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 
 typealias LumaListener = (luma: Double) -> Unit
 
-class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
+class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
+
+    private var cameraSource: CameraSource? = null
 
     private fun allPermissionsGranted(): Boolean {
         val all = REQUIRED_PERMISSIONS.all {
@@ -45,25 +40,12 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
 
         binding = DataBindingUtil.setContentView(this, R.layout.activity_main)
         if (allPermissionsGranted()) {
-            startCamera()
+            startCameraSource()
         } else {
             ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
-    }
-
-    override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-    }
-
-    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-    }
-
-    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-        return false
-    }
-
-    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
     }
 
 
@@ -75,7 +57,7 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQUEST_CODE_PERMISSIONS) {
             if (allPermissionsGranted()) {
-                startCamera()
+                startCameraSource()
             } else {
                 Toast.makeText(
                     this,
@@ -87,38 +69,59 @@ class MainActivity : AppCompatActivity(), TextureView.SurfaceTextureListener {
         }
     }
 
-    private fun startCamera() {
-        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
-        cameraProviderFuture.addListener({
-            // Used to bind the lifecycle of cameras to the lifecycle owner
-            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+    private fun createCameraSource() {
+        // If there's no existing cameraSource, create one.
+        if (cameraSource == null) {
+            cameraSource = CameraSource(this, binding.graphicOverlay)
+        }
+        try {
+            cameraSource?.setMachineLearningFrameProcessor(BarcodeScannerProcessor(this))
+        } catch (e: Exception) {
+            Log.e(TAG, "Can not create image processor: ", e)
+            Toast.makeText(
+                applicationContext,
+                "Can not create image processor: " + e.message,
+                Toast.LENGTH_LONG
+            )
+                .show()
+        }
+    }
 
-            binding.cameraView.implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-
-            // Preview
-            val preview = Preview.Builder()
-                .setTargetResolution(Size(720, 1280))
-                .build()
-
-            preview.setSurfaceProvider(binding.cameraView.surfaceProvider)
-
-            // Select back camera as a default
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
+    /**
+     * Starts or restarts the camera source, if it exists. If the camera source doesn't exist yet
+     * (e.g., because onResume was called before the camera source was created), this will be called
+     * again when the camera source is created.
+     */
+    private fun startCameraSource() {
+        if (cameraSource != null) {
             try {
-                // Unbind use cases before rebinding
-                cameraProvider.unbindAll()
-
-                // Bind use cases to camera
-                cameraProvider.bindToLifecycle(
-                    this, cameraSelector, preview
-                )
-
-            } catch (exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
+                binding.cameraView.start(cameraSource, binding.graphicOverlay)
+            } catch (e: IOException) {
+                Log.e(TAG, "Unable to start camera source.", e)
+                cameraSource!!.release()
+                cameraSource = null
             }
+        }
+    }
 
-        }, ContextCompat.getMainExecutor(this))
+    public override fun onResume() {
+        super.onResume()
+        Log.d(TAG, "onResume")
+        createCameraSource()
+        startCameraSource()
+    }
+
+    /** Stops the camera. */
+    override fun onPause() {
+        super.onPause()
+        binding.cameraView.stop()
+    }
+
+    public override fun onDestroy() {
+        super.onDestroy()
+        if (cameraSource != null) {
+            cameraSource?.release()
+        }
     }
 
 

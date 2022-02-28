@@ -55,4 +55,7 @@ dependencies {
     implementation "androidx.camera:camera-view:${camerax_version}"
     implementation "androidx.camera:camera-extensions:${camerax_version}"
 
+    // Use this dependency to bundle the model with your app
+    implementation 'com.google.mlkit:barcode-scanning:17.0.2'
+
 }
